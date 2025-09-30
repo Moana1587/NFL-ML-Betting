@@ -1,5 +1,10 @@
 data_url = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams"
 
+# ESPN API URLs for team data
+teams_url = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams"
+stats_url_template = "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/{season}/types/2/teams/{team_id}/statistics"
+standings_url_template = "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/{season}/types/1/teams/{team_id}/statistics"
+
 [get-data]
     [get-data.2007]
         start_date = "2007-09-06"
