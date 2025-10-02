@@ -1,6 +1,8 @@
 from datetime import date
 import json
-from flask import Flask, render_template,jsonify
+import os
+import sys
+from flask import Flask, render_template, jsonify
 from functools import lru_cache
 import subprocess, requests, re, time
 
@@ -21,33 +23,125 @@ def fetch_betmgm(ttl_hash=None):
     return fetch_game_data(sportsbook="betmgm")
 
 def fetch_game_data(sportsbook="fanduel"):
-    cmd = ["python", "main.py", "-xgb", f"-odds={sportsbook}"]
-    stdout = subprocess.check_output(cmd, cwd="../").decode()
-    data_re = re.compile(r'\n(?P<home_team>[\w ]+)(\((?P<home_confidence>[\d+\.]+)%\))? vs (?P<away_team>[\w ]+)(\((?P<away_confidence>[\d+\.]+)%\))?: (?P<ou_pick>OVER|UNDER) (?P<ou_value>[\d+\.]+) (\((?P<ou_confidence>[\d+\.]+)%\))?', re.MULTILINE)
-    ev_re = re.compile(r'(?P<team>[\w ]+) EV: (?P<ev>[-\d+\.]+)', re.MULTILINE)
-    odds_re = re.compile(r'(?P<away_team>[\w ]+) \((?P<away_team_odds>-?\d+)\) @ (?P<home_team>[\w ]+) \((?P<home_team_odds>-?\d+)\)', re.MULTILINE)
+    try:
+        # Ensure we're in the correct directory
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        parent_dir = os.path.dirname(current_dir)
+        
+        cmd = ["python", "main.py", "-xgb", f"-odds={sportsbook}"]
+        stdout = subprocess.check_output(
+            cmd, 
+            cwd=parent_dir, 
+            timeout=60,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+    except subprocess.TimeoutExpired:
+        print(f"Timeout running prediction for {sportsbook}")
+        return {}
+    except subprocess.CalledProcessError as e:
+        print(f"Error running prediction for {sportsbook}: {e}")
+        print(f"Command: {' '.join(cmd)}")
+        print(f"Working directory: {parent_dir}")
+        if e.stderr:
+            print(f"Error output: {e.stderr}")
+        return {}
+    except FileNotFoundError:
+        print(f"Python or main.py not found. Current directory: {parent_dir}")
+        return {}
+    except Exception as e:
+        print(f"Unexpected error for {sportsbook}: {e}")
+        return {}
+    
+    # Updated regex patterns to match the new output format
+    # Pattern for: "Los Angeles Rams (67.8%) vs San Francisco 49ers: OVER 45.5 (85.9%)"
+    data_re = re.compile(r'(?P<home_team>[\w\s]+)\s+\((?P<home_confidence>[\d\.]+)%\)\s+vs\s+(?P<away_team>[\w\s]+):\s+(?P<ou_pick>OVER|UNDER)\s+(?P<ou_value>[\d\.]+)\s+\((?P<ou_confidence>[\d\.]+)%\)', re.MULTILINE)
+    
+    # Pattern for Expected Value: "Kansas City Chiefs EV: 0.045"
+    ev_re = re.compile(r'(?P<team>[\w\s]+)\s+EV:\s+(?P<ev>[-\d\.]+)', re.MULTILINE)
+    
+    # Pattern for odds: "Kansas City Chiefs (150) @ Buffalo Bills (-180)"
+    odds_re = re.compile(r'(?P<away_team>[\w\s]+)\s+\((?P<away_team_odds>-?\d+)\)\s+@\s+(?P<home_team>[\w\s]+)\s+\((?P<home_team_odds>-?\d+)\)', re.MULTILINE)
+    
+    # Pattern for betting recommendation: "Recommendation: Bet on Kansas City Chiefs"
+    recommendation_re = re.compile(r'Recommendation:\s+(?P<recommendation>Bet on [\w\s]+|No positive EV bets)', re.MULTILINE)
+    
     games = {}
-    for match in data_re.finditer(stdout):
-        game_dict = {'away_team': match.group('away_team').strip(),
-                     'home_team': match.group('home_team').strip(),
-                     'away_confidence': match.group('away_confidence'),
-                     'home_confidence': match.group('home_confidence'),
-                     'ou_pick': match.group('ou_pick'),
-                     'ou_value': match.group('ou_value'),
-                     'ou_confidence': match.group('ou_confidence')}
+    
+    # Debug: Print a sample of the output to help with regex debugging
+    print(f"Sample output for {sportsbook}:")
+    print(stdout[:500] + "..." if len(stdout) > 500 else stdout)
+    
+    # Parse prediction data
+    matches = list(data_re.finditer(stdout))
+    print(f"Found {len(matches)} prediction matches")
+    
+    # If no matches found, try alternative pattern
+    if len(matches) == 0:
+        print("No matches found with main pattern, trying alternative...")
+        # Alternative pattern for different output format
+        alt_data_re = re.compile(r'(?P<home_team>[\w\s]+)\s+\((?P<home_confidence>[\d\.]+)%\)\s+vs\s+(?P<away_team>[\w\s]+):\s+(?P<ou_pick>OVER|UNDER)\s+(?P<ou_value>[\d\.]+)\s+\((?P<ou_confidence>[\d\.]+)%\)', re.MULTILINE)
+        matches = list(alt_data_re.finditer(stdout))
+        print(f"Found {len(matches)} matches with alternative pattern")
+    
+    for match in matches:
+        game_dict = {
+            'away_team': match.group('away_team').strip(),
+            'home_team': match.group('home_team').strip(),
+            'home_confidence': match.group('home_confidence'),
+            'ou_pick': match.group('ou_pick'),
+            'ou_value': match.group('ou_value'),
+            'ou_confidence': match.group('ou_confidence'),
+            'away_confidence': None,  # Will be filled from EV data
+            'away_team_ev': None,
+            'home_team_ev': None,
+            'away_team_odds': None,
+            'home_team_odds': None,
+            'recommendation': None
+        }
+        
+        # Extract Expected Values
         for ev_match in ev_re.finditer(stdout):
-            if ev_match.group('team') == game_dict['away_team']:
-                game_dict['away_team_ev'] = ev_match.group('ev')
-            if ev_match.group('team') == game_dict['home_team']:
-                game_dict['home_team_ev'] = ev_match.group('ev')
+            team_name = ev_match.group('team').strip()
+            ev_value = ev_match.group('ev')
+            
+            if team_name == game_dict['away_team']:
+                game_dict['away_team_ev'] = ev_value
+            elif team_name == game_dict['home_team']:
+                game_dict['home_team_ev'] = ev_value
+        
+        # Extract odds data
         for odds_match in odds_re.finditer(stdout):
-            if odds_match.group('away_team') == game_dict['away_team']:
+            away_team = odds_match.group('away_team').strip()
+            home_team = odds_match.group('home_team').strip()
+            
+            if (away_team == game_dict['away_team'] and 
+                home_team == game_dict['home_team']):
                 game_dict['away_team_odds'] = odds_match.group('away_team_odds')
-            if odds_match.group('home_team') == game_dict['home_team']:
                 game_dict['home_team_odds'] = odds_match.group('home_team_odds')
-
+                break
+        
+        # Extract betting recommendation
+        for rec_match in recommendation_re.finditer(stdout):
+            # Find recommendation that matches this game
+            recommendation = rec_match.group('recommendation')
+            if (game_dict['away_team'] in recommendation or 
+                game_dict['home_team'] in recommendation):
+                game_dict['recommendation'] = recommendation
+                break
+        
+        # Calculate away team confidence (inverse of home team confidence)
+        if game_dict['home_confidence']:
+            try:
+                home_conf = float(game_dict['home_confidence'])
+                away_conf = round(100 - home_conf, 1)
+                game_dict['away_confidence'] = str(away_conf)
+            except ValueError:
+                pass
+        
         print(json.dumps(game_dict, sort_keys=True, indent=4))
         games[f"{game_dict['away_team']}:{game_dict['home_team']}"] = game_dict
+    
     return games
 
 
@@ -62,11 +156,25 @@ app.jinja_env.add_extension('jinja2.ext.loopcontrols')
 
 @app.route("/")
 def index():
-    fanduel = fetch_fanduel(ttl_hash=get_ttl_hash())
-    draftkings = fetch_draftkings(ttl_hash=get_ttl_hash())
-    betmgm = fetch_betmgm(ttl_hash=get_ttl_hash())
+    try:
+        fanduel = fetch_fanduel(ttl_hash=get_ttl_hash())
+        draftkings = fetch_draftkings(ttl_hash=get_ttl_hash())
+        betmgm = fetch_betmgm(ttl_hash=get_ttl_hash())
 
-    return render_template('index.html', today=date.today(), data={"fanduel": fanduel, "draftkings": draftkings, "betmgm": betmgm})
+        return render_template('index.html', today=date.today(), data={"fanduel": fanduel, "draftkings": draftkings, "betmgm": betmgm})
+    except Exception as e:
+        print(f"Error in index route: {e}")
+        return f"Error loading predictions: {str(e)}", 500
+
+@app.route("/test")
+def test():
+    """Simple test route to verify Flask is working"""
+    return jsonify({
+        "status": "success",
+        "message": "Flask app is running",
+        "platform": sys.platform,
+        "python_version": sys.version
+    })
 
 
 
@@ -253,3 +361,12 @@ team_abbreviations = {
     'Tennessee Titans': 'TEN',
     'Washington Commanders': 'WAS'
 }
+
+if __name__ == '__main__':
+    # Windows-specific fixes
+    if sys.platform.startswith('win'):
+        # Disable Flask's reloader on Windows to avoid socket issues
+        app.run(debug=True, use_reloader=False, host='127.0.0.1', port=5000)
+    else:
+        # Normal operation for other platforms
+        app.run(debug=True, host='127.0.0.1', port=5000)
