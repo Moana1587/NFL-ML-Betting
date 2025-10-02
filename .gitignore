@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+env/
+
+# Node
+node_modules/
+dist/
+*.log
+
+# Secrets / env
+.env
+.env.*
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Data you don’t want in git
+data/
+*.csv
+*.parquet
+*.sqlite
+
+# Build artifacts
+build/
+*.egg-info/

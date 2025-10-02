@@ -5,6 +5,10 @@ teams_url = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams"
 stats_url_template = "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/{season}/types/2/teams/{team_id}/statistics"
 standings_url_template = "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/{season}/types/1/teams/{team_id}/statistics"
 
+  # The Odds API for odds data
+  odds_url_template = "https://api.the-odds-api.com/v4/historical/sports/americanfootball_nfl/odds"
+  odds_api_key = "0b7c80899955b41b672f76135ae1caad"
+
 [get-data]
     [get-data.2007]
         start_date = "2007-09-06"
@@ -115,72 +119,15 @@ standings_url_template = "https://sports.core.api.espn.com/v2/sports/football/le
         end_year = "2024"
 
 [get-odds-data]
-    [get-odds-data.2024]
-        start_date = "2024-09-05"
-        end_date = "2025-02-09"
-        start_year = "2024"
-        end_year = "2024"
 
-[create-games]
-    [create-games.2012]
-        start_date = "2012-09-05"
-        end_date = "2013-02-03"
-        start_year = "2012"
-        end_year = "2012"
-
-    [create-games.2013]
-        start_date = "2013-09-05"
-        end_date = "2014-02-02"
-        start_year = "2013"
-        end_year = "2013"
-
-    [create-games.2014]
-        start_date = "2014-09-04"
-        end_date = "2015-02-01"
-        start_year = "2014"
-        end_year = "2014"
-
-    [create-games.2015]
-        start_date = "2015-09-10"
-        end_date = "2016-02-07"
-        start_year = "2015"
-        end_year = "2015"
-
-    [create-games.2016]
-        start_date = "2016-09-08"
-        end_date = "2017-02-05"
-        start_year = "2016"
-        end_year = "2016"
-
-    [create-games.2017]
-        start_date = "2017-09-07"
-        end_date = "2018-02-04"
-        start_year = "2017"
-        end_year = "2017"
-
-    [create-games.2018]
-        start_date = "2018-09-06"
-        end_date = "2019-02-03"
-        start_year = "2018"
-        end_year = "2018"
-
-    [create-games.2019]
-        start_date = "2019-09-05"
-        end_date = "2020-02-02"
-        start_year = "2019"
-        end_year = "2019"
-
-    [create-games.2020]
-        start_date = "2020-09-10"
-        end_date = "2021-02-07"
-        start_year = "2020"
-        end_year = "2020"
-
-    [create-games.2021]
+    [get-odds-data.2021]
         start_date = "2021-09-09"
         end_date = "2022-02-13"
         start_year = "2021"
         end_year = "2021"
+
+
+[create-games]
 
     [create-games.2022]
         start_date = "2022-09-08"

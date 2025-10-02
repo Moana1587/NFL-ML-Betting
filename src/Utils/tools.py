@@ -1,4 +1,5 @@
 import re
+import time
 from datetime import datetime
 
 import pandas as pd
@@ -35,15 +36,45 @@ data_headers = {
 }
 
 
-def get_json_data(url):
-    raw_data = requests.get(url, headers=data_headers)
-    try:
-        json = raw_data.json()
-    except Exception as e:
-        print(e)
-        return {}
-    # ESPN API returns data directly, not in resultSets format
-    return json
+def get_json_data(url, timeout=30, max_retries=3):
+    """Get JSON data from URL with timeout and retry logic"""
+    for attempt in range(max_retries):
+        try:
+            print(f"Attempting API call (attempt {attempt + 1}/{max_retries}): {url}")
+            raw_data = requests.get(url, headers=data_headers, timeout=timeout)
+            raw_data.raise_for_status()  # Raise an exception for bad status codes
+            
+            try:
+                json_data = raw_data.json()
+                print(f"Successfully retrieved data from API")
+                return json_data
+            except Exception as e:
+                print(f"Error parsing JSON: {e}")
+                return {}
+                
+        except requests.exceptions.Timeout:
+            print(f"Timeout error on attempt {attempt + 1}/{max_retries} for URL: {url}")
+            if attempt < max_retries - 1:
+                print(f"Retrying in 5 seconds...")
+                time.sleep(5)
+            else:
+                print(f"Max retries reached. Skipping this request.")
+                return {}
+                
+        except requests.exceptions.RequestException as e:
+            print(f"Request error on attempt {attempt + 1}/{max_retries}: {e}")
+            if attempt < max_retries - 1:
+                print(f"Retrying in 5 seconds...")
+                time.sleep(5)
+            else:
+                print(f"Max retries reached. Skipping this request.")
+                return {}
+                
+        except Exception as e:
+            print(f"Unexpected error on attempt {attempt + 1}/{max_retries}: {e}")
+            return {}
+    
+    return {}
 
 
 def get_todays_games_json(url):
